@@ -17,6 +17,13 @@ plugins=(
 # --- Other paths to add --- 
 export PATH="$HOME/.local/bin:$PATH"
 
+# --- a naughty git alias for one-line pushing ---
+function gacp() {
+  git add -A
+  git commit -m "$1"
+  git push
+}
+
 # --- Environment Specific Logic ---
 
 if [[ "$OSTYPE" == "darwin"* ]]; then
