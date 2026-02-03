@@ -52,3 +52,10 @@ fi
 # --- Initialize Oh-My-Zsh ---
 # Must be loaded after plugins are defined
 source $ZSH/oh-my-zsh.sh
+
+# bun completions
+[ -s "/home/mila/g/georget/.bun/_bun" ] && source "/home/mila/g/georget/.bun/_bun"
+
+# bun
+export BUN_INSTALL="$HOME/.bun"
+export PATH="$BUN_INSTALL/bin:$PATH"
