@@ -1,4 +1,4 @@
-## `~/dotfiles//` 
+## `~/dotfiles/` 
 
 To install, clone this directory in your home directory, install `stow`
 
