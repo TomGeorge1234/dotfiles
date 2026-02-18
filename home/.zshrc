@@ -11,7 +11,7 @@ plugins=(
     zsh-autosuggestions
     zsh-syntax-highlighting
     python
-    you-should-use
+#    you-should-use
 )
 
 # --- Other paths to add --- 
@@ -38,6 +38,15 @@ if [[ "$OSTYPE" == "darwin"* ]]; then
 
     # Mac Python/Pipx Paths (Using $HOME for portability)
     export PATH="$PATH:$HOME/Library/Python/3.9/bin"
+
+    # Bare `mila code` defaults to --alloc --mem=16G
+    mila() {
+      if [[ "$1" == "code" && $# -eq 1 ]]; then
+        command mila code --alloc --mem=16G
+      else
+        command mila "$@"
+      fi
+    }
 
 elif [[ "$OSTYPE" == "linux-gnu"* ]]; then
     # ==============================================
