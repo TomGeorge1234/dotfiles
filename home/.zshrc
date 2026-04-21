@@ -1,45 +1,50 @@
 # ==============================================================================
-# 🚀 ZSH Configuration Startup (Unified)
+# 🚀 ZSH Configuration Startup (Unified & Optimized)
 # ==============================================================================
 
-# --- Oh-My-Zsh installation ---
+# --- Oh-My-Zsh Core ---
 export ZSH="$HOME/.oh-my-zsh"
-ZSH_THEME="robbyrussell" 
-plugins=(
-    git
-    z
-    zsh-autosuggestions
-    zsh-syntax-highlighting
-    python
-#    you-should-use
-)
+ZSH_THEME="robbyrussell"
 
-# --- Other paths to add --- 
+# Plugins
+# Ensure these are installed in ~/.oh-my-zsh/custom/plugins
+plugins=(git z zsh-autosuggestions zsh-syntax-highlighting python)
+
+# --- Path Management ---
 export PATH="$HOME/.local/bin:$PATH"
+export PATH="$HOME/.bun/bin:$PATH"
 
-# --- a naughty git alias for one-line pushing ---
-function gacp() {
-  git add -A
-  git commit -m "$1"
-  git push
+# --- Git Functionality (Right-Aligned) ---
+setopt PROMPT_SUBST
+# Function for right-aligned git branch
+parse_git_branch() {
+  git branch 2> /dev/null | sed -e '/^[^*]/d' -e 's/* \(.*\)/(\1)/'
+}
+RPROMPT='$(parse_git_branch)'
+
+# --- Git Alias ---
+gacp() {
+  git add -A && git commit -m "$1" && git push
 }
 
 # --- Environment Specific Logic ---
 
 if [[ "$OSTYPE" == "darwin"* ]]; then
-    # ==============================================
     # 🍎 MacOS (Local) Specifics
-    # ==============================================
     
-    # NVM (Node Version Manager)
+    # NVM Lazy Load
     export NVM_DIR="$HOME/.nvm"
-    [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh" 
-    [ -s "$NVM_DIR/bash_completion" ] && \. "$NVM_DIR/bash_completion" 
-
-    # Mac Python/Pipx Paths (Using $HOME for portability)
+    nvm() {
+        unset -f nvm
+        [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
+        [ -s "$NVM_DIR/bash_completion" ] && \. "$NVM_DIR/bash_completion"
+        nvm "$@"
+    }
+    
+    # Python/Pipx
     export PATH="$PATH:$HOME/Library/Python/3.9/bin"
-
-    # Bare `mila code` defaults to --alloc --mem=16G
+    
+    # Mila alias
     mila() {
       if [[ "$1" == "code" && $# -eq 1 ]]; then
         command mila code --alloc --mem=16G
@@ -49,22 +54,15 @@ if [[ "$OSTYPE" == "darwin"* ]]; then
     }
 
 elif [[ "$OSTYPE" == "linux-gnu"* ]]; then
-    # ==============================================
     # 🐧 Linux (Mila Cluster) Specifics
-    # ==============================================
     
-    # Mila/Slurm Convenience Aliases
+    # Slurm Convenience
     alias sq="squeue -u $USER"
     alias si="sinfo"
+    
+    # Bun completions
+    [ -s "$HOME/.bun/_bun" ] && source "$HOME/.bun/_bun"
 fi
 
 # --- Initialize Oh-My-Zsh ---
-# Must be loaded after plugins are defined
 source $ZSH/oh-my-zsh.sh
-
-# bun completions
-[ -s "/home/mila/g/georget/.bun/_bun" ] && source "/home/mila/g/georget/.bun/_bun"
-
-# bun
-export BUN_INSTALL="$HOME/.bun"
-export PATH="$BUN_INSTALL/bin:$PATH"
