@@ -13,3 +13,5 @@
 	sort = version:refname
 [push]
 	autoSetupRemote = true
+[alias]
+	clean-merged = !git branch --merged main | grep -vE \"^\\*|^\\s*(main|master)\\s*$\" | xargs -r git branch -d
