@@ -9,7 +9,8 @@ ZSH_THEME="robbyrussell"
 # Plugins
 # Ensure these are installed in ~/.oh-my-zsh/custom/plugins
 ZSH_TMUX_AUTOSTART=true
-ZSH_TMUX_AUTOCONNECT=false
+ZSH_TMUX_AUTOCONNECT=true
+ZSH_TMUX_AUTOQUIT=false
 plugins=(git tmux z zsh-autosuggestions zsh-syntax-highlighting python)
 
 # --- Path Management ---
