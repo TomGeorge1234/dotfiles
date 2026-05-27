@@ -8,7 +8,9 @@ ZSH_THEME="robbyrussell"
 
 # Plugins
 # Ensure these are installed in ~/.oh-my-zsh/custom/plugins
-plugins=(git z zsh-autosuggestions zsh-syntax-highlighting python)
+ZSH_TMUX_AUTOSTART=true
+ZSH_TMUX_AUTOCONNECT=false
+plugins=(git tmux z zsh-autosuggestions zsh-syntax-highlighting python)
 
 # --- Path Management ---
 export PATH="$HOME/.local/bin:$PATH"
@@ -46,8 +48,19 @@ if [[ "$OSTYPE" == "darwin"* ]]; then
     
     # Mila alias
     mila() {
-      if [[ "$1" == "code" && $# -eq 1 ]]; then
-        command mila code --alloc --mem=16G
+      if [[ "$1" == "code" ]]; then
+        shift
+        local arg has_alloc=0
+        for arg in "$@"; do
+          case "$arg" in
+            --alloc|--salloc|--sbatch) has_alloc=1; break ;;
+          esac
+        done
+        if (( has_alloc )); then
+          command mila code "$@"
+        else
+          command mila code "$@" --alloc --mem=16G --time=8:00:00
+        fi
       else
         command mila "$@"
       fi
