@@ -62,6 +62,16 @@ if [[ "$OSTYPE" == "darwin"* ]]; then
         else
           command mila code "$@" --alloc --mem=16G --time=8:00:00
         fi
+      elif [[ "$1" == "recode" ]]; then
+        # Reconnect to an existing mila-code job instead of allocating a new one
+        shift
+        local JOB_ID=$(ssh mila "squeue -u \$USER --name=mila-code -h -o %i" | head -n 1)
+        if [ -z "$JOB_ID" ]; then
+          echo "No active mila-code job found."
+          return 1
+        fi
+        echo "Found mila-code running on Job ID $JOB_ID. Reconnecting..."
+        command mila code "$1" --job "$JOB_ID"
       else
         command mila "$@"
       fi
