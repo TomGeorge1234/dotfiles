@@ -1,6 +1,12 @@
-## `~/dotfiles/` 
+## `~/.dotfiles/`
 
-To install, clone this directory in your home directory, install `stow`
+To install, clone this repo into your home directory as `.dotfiles`:
+
+```bash
+git clone https://github.com/TomGeorge1234/dotfiles.git ~/.dotfiles
+```
+
+Then install `stow`
 
 ```bash
 brew install stow
@@ -21,6 +27,6 @@ make install
 Then "stow" the contents of this directory to create symlinks to the contained files. You may need to remove originals to avoid conflicts:
 
 ```
-cd dotfiles
+cd ~/.dotfiles
 stow home
 ```
