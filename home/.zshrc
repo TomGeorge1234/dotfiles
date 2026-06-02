@@ -7,23 +7,22 @@ export ZSH="$HOME/.oh-my-zsh"
 ZSH_THEME="robbyrussell"
 
 # Plugins
-# Ensure these are installed in ~/.oh-my-zsh/custom/plugins
-ZSH_TMUX_AUTOSTART=true
-ZSH_TMUX_AUTOCONNECT=true
-ZSH_TMUX_AUTOQUIT=false
-plugins=(git tmux z zsh-autosuggestions zsh-syntax-highlighting python)
+# zsh-autosuggestions and zsh-syntax-highlighting are cloned into
+# ~/.oh-my-zsh/custom/plugins by bootstrap.sh (not bundled with oh-my-zsh).
+# zsh-syntax-highlighting must come LAST so it can wrap everything else.
+plugins=(git tmux z python zsh-autosuggestions zsh-syntax-highlighting)
+
+# Auto-start tmux only in real terminals, not embedded ones (VS Code, Emacs).
+# This must be set before oh-my-zsh.sh sources the tmux plugin.
+if [[ "$TERM_PROGRAM" != "vscode" && -z "$INSIDE_EMACS" ]]; then
+  ZSH_TMUX_AUTOSTART=true
+  ZSH_TMUX_AUTOCONNECT=true
+  ZSH_TMUX_AUTOQUIT=false
+fi
 
 # --- Path Management ---
 export PATH="$HOME/.local/bin:$PATH"
 export PATH="$HOME/.bun/bin:$PATH"
-
-# --- Git Functionality (Right-Aligned) ---
-setopt PROMPT_SUBST
-# Function for right-aligned git branch
-parse_git_branch() {
-  git branch 2> /dev/null | sed -e '/^[^*]/d' -e 's/* \(.*\)/(\1)/'
-}
-RPROMPT='$(parse_git_branch)'
 
 # --- Git Alias ---
 gacp() {

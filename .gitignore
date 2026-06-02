@@ -1,4 +1,9 @@
 .DS_Store
-.ssh/
-!.ssh/config
 
+# SSH: track only the config, never keys/known_hosts.
+# The parent-dir form `.ssh/` would make the negation below unreliable.
+home/.ssh/*
+!home/.ssh/config
+
+# matplotlib regenerates this cache; it's not config.
+home/.matplotlib/
