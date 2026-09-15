@@ -1,0 +1,23 @@
+#!/bin/sh
+
+if ! command -v python3 >/dev/null 2>&1; then
+    printf '%s\n' "sstatus: Python 3 is not installed or is not on PATH." >&2
+    printf '%s\n' "Install Python 3 before running this dashboard." >&2
+    exit 1
+fi
+
+missing=""
+for command_name in squeue sacct sshare scontrol; do
+    if ! command -v "$command_name" >/dev/null 2>&1; then
+        missing="${missing}${missing:+, }${command_name}"
+    fi
+done
+
+if [ -n "$missing" ]; then
+    printf 'sstatus: Slurm is not available on %s.\n' "$(hostname 2>/dev/null || printf 'this machine')" >&2
+    printf 'Missing commands: %s\n' "$missing" >&2
+    printf '%s\n' "Run sstatus on a Slurm login or compute node." >&2
+    exit 1
+fi
+
+exec python3 "${0}.py" "$@"

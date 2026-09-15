@@ -89,3 +89,7 @@ fi
 
 # --- Initialize Oh-My-Zsh ---
 source $ZSH/oh-my-zsh.sh
+
+# >>> Codex installer >>>
+export PATH="/home/mila/g/georget/.local/bin:$PATH"
+# <<< Codex installer <<<
