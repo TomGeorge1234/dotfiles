@@ -77,6 +77,20 @@ def bar(used: int, total: int, width: int = 24) -> str:
     filled = round(width * used / total) if total else 0
     return "█" * filled + "░" * (width - filled)
 
+def hourly_histogram(records: list[tuple], now: datetime) -> tuple[str, int]:
+    """Summarize terminal jobs into 48 chronological local-time half-hour bins."""
+    start = now - timedelta(hours=24)
+    bins = [0] * 48
+    for ended, *_ in records:
+        index = int((ended - start).total_seconds() // (30 * 60))
+        if 0 <= index < len(bins):
+            bins[index] += 1
+    peak = max(bins, default=0)
+    glyphs = " ▁▂▃▄▅▆▇█"
+    chart = "".join(glyphs[(count * 8 + peak - 1) // peak] if count else " "
+                    for count in bins) if peak else " " * len(bins)
+    return chart, peak
+
 def section(title: str, color: bool) -> None:
     print(f"\n{paint(title.upper(), 'cyan', color)}")
 
@@ -95,6 +109,10 @@ def main() -> int:
         "peers": ["sshare", "-a", "-n", "-P", "-o", "Account,User,NormShares,EffectvUsage,FairShare"],
         "nodes": ["scontrol", "show", "nodes", "-o"],
         "jobs": ["squeue", *filters, "-u", user, "-h", "-o", "%i|%T|%P|%j|%b|%Q|%M|%l|%r"],
+        # Keep the dashboard compact by showing arrays as ranges above, but use
+        # expanded elements here for the live-task count (relevant to Slurm's
+        # per-user job limit).
+        "job_count": ["squeue", *filters, "-u", user, "-h", "-r", "-o", "%i"],
         "starts": ["squeue", *filters, "-u", user, "-h", "--start", "-o", "%i|%S"],
         "competition": ["squeue", "-h", "-t", "PD", "-o", "%i|%u|%P|%b|%Q"],
         # Do not use -X: array-task records can disappear behind an active array
@@ -103,7 +121,7 @@ def main() -> int:
         "completed": ["sacct", "-u", user, "-S", "now-24hours",
                       "-n", "-P", "-o", "JobIDRaw,JobName%50,Partition,AllocTRES,Elapsed,End,State"],
     }
-    with ThreadPoolExecutor(max_workers=7) as pool:
+    with ThreadPoolExecutor(max_workers=8) as pool:
         fs = {k: pool.submit(run, v) for k, v in commands.items()}
         results = {k: f.result() for k, f in fs.items()}
 
@@ -131,12 +149,17 @@ def main() -> int:
                 except ValueError: continue
                 competitors.append((peer_job, peer_user, peer_partition,
                                     gpu_types(peer_gres), peer_priority_value))
-    section("Your jobs", color)
+    job_count_out, job_count_err = results["job_count"]
+    job_count = len(job_count_out.splitlines()) if not job_count_err else None
+    jobs_title = f"Your jobs · {job_count} total" if job_count is not None else "Your jobs"
+    section(jobs_title, color)
     if err: print(paint("  ◌ unavailable", "dim", color))
     elif not out: print(paint("  ✓ no matching jobs", "green", color))
     else:
         job_width = min(32, max(11, *(len(line.split("|", 1)[0]) for line in out.splitlines())))
-        print(f"  {'JOB':<{job_width}} {'NAME':<22} {'STATE':<9} {'AHEAD':>6}  {'TIME':<13} ETA / REASON")
+        name_width = min(30, max(4, *(len(line.split("|", 4)[3]) for line in out.splitlines()
+                                       if len(line.split("|", 4)) >= 4)))
+        print(f"  {'JOB':<{job_width}} {'NAME':<{name_width}} {'STATE':<9} {'AHEAD':>6}  {'TIME':<13} ETA / REASON")
         for line in out.splitlines():
             f=line.split("|",8)
             if len(f)!=9: continue
@@ -153,7 +176,7 @@ def main() -> int:
                                 and peer_priority > my_priority
                                 and (not mine or not peer_types or "*" in mine or "*" in peer_types or mine & peer_types)))
             job_text = job if len(job) <= job_width else job[:job_width-1] + "…"
-            print(f"  {job_text:<{job_width}} {name:<22.22} {paint(state,style,color):<18} {ahead:>6}  "
+            print(f"  {job_text:<{job_width}} {name:<{name_width}.{name_width}} {paint(state,style,color):<18} {ahead:>6}  "
                   f"{(elapsed+'/'+limit):<13.13} {detail}")
 
     section("Recent job outcomes · last 24 hours", color)
@@ -192,6 +215,9 @@ def main() -> int:
         else:
             successful = [record for record in completed if record[-1] == "COMPLETED"]
             print(paint(f"  ✓ {len(successful)} jobs recently finished", "green", color))
+            chart, peak = hourly_histogram(completed, now)
+            print(f"  Outcomes by completion half-hour · local time · peak {peak}/30 min")
+            print(f"  -24 hrs {chart} Now")
             groups: dict[str, list[tuple]] = defaultdict(list)
             for record in successful:
                 groups[record[2]].append(record)
