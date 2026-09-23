@@ -11,7 +11,8 @@ from statistics import median
 TIMEOUT = 4
 RESET = "\033[0m"
 ANSI = {"cyan":"\033[1;36m", "green":"\033[1;32m", "yellow":"\033[1;33m",
-        "red":"\033[1;31m", "dim":"\033[2m", "bold":"\033[1m"}
+        "red":"\033[1;31m", "dim":"\033[2m", "bold":"\033[1m",
+        "blue":"\033[1;34m"}
 
 def run(args: list[str]) -> tuple[str, str]:
     exe = shutil.which(args[0])
@@ -77,19 +78,27 @@ def bar(used: int, total: int, width: int = 24) -> str:
     filled = round(width * used / total) if total else 0
     return "█" * filled + "░" * (width - filled)
 
-def hourly_histogram(records: list[tuple], now: datetime) -> tuple[str, int]:
-    """Summarize terminal jobs into 48 chronological local-time half-hour bins."""
-    start = now - timedelta(hours=24)
-    bins = [0] * 48
+def completion_histogram(records: list[tuple], now: datetime, window: timedelta,
+                         bins_count: int, base_color: str,
+                         recent_color: str | None = None, recent_bins: int = 1,
+                         color: bool = True) -> str:
+    """Render completion counts and visibly highlight the most recent bins."""
+    start = now - window
+    bins = [0] * bins_count
+    bin_seconds = window.total_seconds() / bins_count
     for ended, *_ in records:
-        index = int((ended - start).total_seconds() // (30 * 60))
-        if 0 <= index < len(bins):
+        index = int((ended - start).total_seconds() // bin_seconds)
+        if 0 <= index < bins_count:
             bins[index] += 1
     peak = max(bins, default=0)
     glyphs = " ▁▂▃▄▅▆▇█"
-    chart = "".join(glyphs[(count * 8 + peak - 1) // peak] if count else " "
-                    for count in bins) if peak else " " * len(bins)
-    return chart, peak
+    chart = []
+    for index, count in enumerate(bins):
+        glyph = glyphs[(count * 8 + peak - 1) // peak] if count and peak else " "
+        shade = (recent_color if recent_color and index >= bins_count - recent_bins
+                 else base_color)
+        chart.append(paint(glyph, shade, color))
+    return "".join(chart)
 
 def section(title: str, color: bool) -> None:
     print(f"\n{paint(title.upper(), 'cyan', color)}")
@@ -97,10 +106,11 @@ def section(title: str, color: bool) -> None:
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--job", help="show only this job ID")
+    ap.add_argument("--user", help="show jobs and fair-share data for this user")
     ap.add_argument("-p", "--partition", help="restrict jobs and nodes to a partition")
     ap.add_argument("--no-color", action="store_true", help="disable ANSI colors")
     args = ap.parse_args()
-    user = os.environ.get("USER") or getpass.getuser()
+    user = args.user or os.environ.get("USER") or getpass.getuser()
     color = sys.stdout.isatty() and not args.no_color and "NO_COLOR" not in os.environ
     filters = (["-j", args.job] if args.job else []) + (["-p", args.partition] if args.partition else [])
     commands = {
@@ -108,6 +118,9 @@ def main() -> int:
         # Kept separate because some sites allow a user's association but hide peers.
         "peers": ["sshare", "-a", "-n", "-P", "-o", "Account,User,NormShares,EffectvUsage,FairShare"],
         "nodes": ["scontrol", "show", "nodes", "-o"],
+        # Use the site's own availability monitor for the cluster-wide idle
+        # counts; Slurm node totals alone include GPUs that may be reserved.
+        "availability": ["savail"],
         "jobs": ["squeue", *filters, "-u", user, "-h", "-o", "%i|%T|%P|%j|%b|%Q|%M|%l|%r"],
         # Keep the dashboard compact by showing arrays as ranges above, but use
         # expanded elements here for the live-task count (relevant to Slurm's
@@ -118,7 +131,7 @@ def main() -> int:
         # Do not use -X: array-task records can disappear behind an active array
         # parent. Fetch all outcomes and filter locally; accounting state updates
         # can also lag briefly behind squeue.
-        "completed": ["sacct", "-u", user, "-S", "now-24hours",
+        "completed": ["sacct", "-u", user, "-S", "now-7days",
                       "-n", "-P", "-o", "JobIDRaw,JobName%50,Partition,AllocTRES,Elapsed,End,State"],
     }
     with ThreadPoolExecutor(max_workers=8) as pool:
@@ -185,7 +198,7 @@ def main() -> int:
         errors.append(completed_err)
         print(paint("  ◌ accounting data unavailable", "dim", color))
     else:
-        cutoff = datetime.now().astimezone() - timedelta(hours=24)
+        cutoff_week = datetime.now().astimezone() - timedelta(days=7)
         completed = []
         terminal_states = {"COMPLETED", "FAILED", "CANCELLED", "TIMEOUT", "OUT_OF_MEMORY",
                            "NODE_FAIL", "PREEMPTED", "BOOT_FAIL", "DEADLINE", "REVOKED"}
@@ -202,7 +215,7 @@ def main() -> int:
             except ValueError:
                 continue
             base_state = state.split()[0].split("+")[0]
-            if base_state in terminal_states and end_time >= cutoff:
+            if base_state in terminal_states and end_time >= cutoff_week:
                 completed.append((end_time, job, name, partition, gpu_count(tres), elapsed, base_state))
         completed.sort(reverse=True)
         # Once an array parent completes sacct may return both the parent and all
@@ -211,13 +224,23 @@ def main() -> int:
         completed = [record for record in completed
                      if not ("_" not in record[1] and record[1] in array_parents)]
         if not completed:
-            print(paint("  ◌ no terminal job records in the last 24 hours", "dim", color))
+            print(paint("  ◌ no terminal job records in the last 7 days", "dim", color))
         else:
-            successful = [record for record in completed if record[-1] == "COMPLETED"]
-            print(paint(f"  ✓ {len(successful)} jobs recently finished", "green", color))
-            chart, peak = hourly_histogram(completed, now)
-            print(f"  Outcomes by completion half-hour · local time · peak {peak}/30 min")
-            print(f"  -24 hrs {chart} Now")
+            cutoff_day = now - timedelta(hours=24)
+            recent = [record for record in completed if record[0] >= cutoff_day]
+            successful = [record for record in recent if record[-1] == "COMPLETED"]
+            hour_chart = completion_histogram(completed, now, timedelta(hours=1), 48, "blue", color=color)
+            day_chart = completion_histogram(completed, now, timedelta(hours=24), 48, "yellow", "blue", 2, color)
+            week_chart = completion_histogram(completed, now, timedelta(days=7), 48, "green", "yellow", 7, color)
+            print("  Completions · local time · bars show jobs per interval")
+            hour_count = sum(record[0] >= now - timedelta(hours=1) for record in completed)
+            labels = [f"Last hour ({hour_count})",
+                      f"Last 24 hrs ({len(recent)})",
+                      f"Last 7 days ({len(completed)})"]
+            label_width = max(map(len, labels))
+            for label, chart in zip(labels, (hour_chart, day_chart, week_chart)):
+                print(f"  {label:<{label_width}} |{chart}| Now")
+            print(paint(f"  ✓ {len(successful)} jobs completed in the last 24 hours", "green", color))
             groups: dict[str, list[tuple]] = defaultdict(list)
             for record in successful:
                 groups[record[2]].append(record)
@@ -229,7 +252,7 @@ def main() -> int:
                     average = clock_duration(sum(timings) / len(timings)) if timings else "—"
                     latest = max(record[0] for record in records)
                     print(f"    {name:<32.32} {len(records):>5}  {average:>12}  {latest:%H:%M}")
-            failures = [record for record in completed if record[-1] != "COMPLETED"]
+            failures = [record for record in recent if record[-1] != "COMPLETED"]
             if failures:
                 by_state: dict[str, int] = defaultdict(int)
                 for record in failures: by_state[record[-1]] += 1
@@ -290,6 +313,17 @@ def main() -> int:
 
     section("Cluster GPUs", color)
     out, err = results["nodes"]
+    avail_out, avail_err = results["availability"]
+    availability = []
+    if avail_err:
+        print(paint("  Unreserved GPU availability (savail): unavailable", "dim", color))
+    else:
+        for line in avail_out.splitlines():
+            match = re.match(r"^\s*(\S+)\s+(\d+)\s*/\s*(\d+)\s*$", line)
+            if match:
+                availability.append((match.group(1), int(match.group(2)), int(match.group(3))))
+        if not availability:
+            print(paint("  Unreserved GPU availability (savail): no GPU counts returned", "dim", color))
     if err: errors.append(err); print(paint("  ◌ unavailable", "dim", color))
     else:
         configured=allocated=gpu_nodes=unavailable=0
@@ -299,15 +333,19 @@ def main() -> int:
             cfg=re.search(r"CfgTRES=(\S+)", line); alloc=re.search(r"AllocTRES=(\S+)", line); state=re.search(r"State=(\S+)", line)
             count=gpu_count(cfg.group(1)) if cfg else 0
             if not count: continue
-            gpu_nodes+=1; configured+=count; allocated+=gpu_count(alloc.group(1)) if alloc else 0
-            if state and re.search(r"DOWN|DRAIN|FAIL|MAINT", state.group(1)): unavailable+=count
-        free=max(0, configured-allocated-unavailable); pct=100*allocated/configured if configured else 0
-        style="green" if pct<70 else "yellow" if pct<90 else "red"
-        print(f"  {paint(bar(allocated,configured),style,color)}  {paint(f'{pct:.0f}% busy',style,color)}")
-        unavailable_text = (f"  ·  {paint(str(unavailable),'yellow',color)} unavailable"
-                            if unavailable else "")
-        print(f"  {paint(str(allocated),'bold',color)} allocated  ·  {paint(str(free),'green',color)} apparently free  ·  "
-              f"{configured} total  ·  {gpu_nodes} nodes{unavailable_text}")
+            node_allocated=gpu_count(alloc.group(1)) if alloc else 0
+            node_unavailable=count if state and re.search(r"DOWN|DRAIN|FAIL|MAINT", state.group(1)) else 0
+            gpu_nodes+=1; configured+=count; allocated+=node_allocated; unavailable+=node_unavailable
+        if availability:
+            idle_total = sum(idle for _, idle, _ in availability)
+            tracked_total = sum(total for _, _, total in availability)
+            idle_pct = 100 * idle_total / tracked_total if tracked_total else 0
+            idle_style = "red" if idle_pct < 10 else "yellow" if idle_pct < 30 else "green"
+            print(f"  {paint(bar(idle_total,tracked_total), idle_style, color)}  {idle_total}/{tracked_total} unreserved idle GPUs (savail) · {idle_pct:.0f}%")
+            model_line = "  " + "  ".join(
+                paint(f"{model} {idle}/{total}", "dim", color) if idle == 0 else f"{model} {idle}/{total}"
+                for model, idle, total in availability)
+            print(model_line)
 
     if errors:
         section("Warnings", color)
